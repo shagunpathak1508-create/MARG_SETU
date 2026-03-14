@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Traffic Flow Optimizer</title>
+  <meta name="description" content="Real-time dashboard for monitoring and optimising urban traffic flow, vehicle scheduling, and emergency routing." />
+  <link rel="stylesheet" href="style.css" />
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ═══════════════════════ HEADER ═══════════════════════ -->
+  <header class="header">
+    <div class="header-brand">
+      <div class="header-icon">
+        <!-- traffic / road icon -->
+        <svg viewBox="0 0 24 24"><path d="M3 17l2-7h14l2 7"/><path d="M5 10V7a2 2 0 012-2h10a2 2 0 012 2v3"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="8"  y1="17" x2="8"  y2="21"/><line x1="16" y1="17" x2="16" y2="21"/></svg>
+      </div>
+      <div>
+        <h1>Smart Traffic Flow Optimizer</h1>
+        <span>Real-time road monitoring &amp; route intelligence</span>
+      </div>
+    </div>
+
+    <div class="header-meta">
+      <div class="status-dot"></div>
+      <span class="status-label">Live</span>
+      <button id="refresh-btn">
+        <!-- refresh icon -->
+        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Refresh
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════ MAIN ════════════════════════ -->
+  <main class="container">
+
+    <!-- ── KPI Strip ───────────────────────────────────────── -->
+    <p class="section-title">Overview</p>
+    <div class="kpi-grid">
+
+      <div class="kpi-card">
+        <span class="kpi-label">Total Vehicles</span>
+        <span class="kpi-value" id="kpi-total-vehicles">—</span>
+        <span class="kpi-sub">across all monitored roads</span>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-label">Traffic Status</span>
+        <div id="kpi-status-area" style="margin-top:.25rem">—</div>
+        <span class="kpi-sub" id="kpi-congestion-pct">—</span>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-label">Roads Monitored</span>
+        <span class="kpi-value" id="kpi-road-count">—</span>
+        <span class="kpi-sub">active road segments</span>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-label">Predicted (10 min)</span>
+        <span class="kpi-value" id="kpi-predicted">—</span>
+        <span class="kpi-sub">AI-estimated total vehicles</span>
+      </div>
+    </div>
+
+    <!-- ── Main Grid: Traffic Table  |  Route Planner ──────── -->
+    <p class="section-title">Traffic &amp; Routing</p>
+    <div class="main-grid">
+
+      <!-- Traffic Status Table -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+            </svg>
+            Vehicle Count &amp; Traffic Status
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div style="overflow-x:auto">
+            <table class="traffic-table">
+              <thead>
+                <tr>
+                  <th>Road</th>
+                  <th>Vehicles</th>
+                  <th>Capacity</th>
+                  <th>Load</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="traffic-table-body">
+                <tr><td colspan="5"><div class="loader"><div class="spinner"></div>Loading…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route Planner -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 8 16 12 12 16"/><line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            Recommended Route
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="route-inputs">
+            <div class="input-group">
+              <label for="route-start">From</label>
+              <select id="route-start"><option value="">Select road…</option></select>
+            </div>
+            <div class="input-group">
+              <label for="route-end">To</label>
+              <select id="route-end"><option value="">Select road…</option></select>
+            </div>
+            <button class="btn btn-primary" id="get-route-btn" style="align-self:flex-end;">Find</button>
+          </div>
+          <div id="route-result">
+            <p style="font-size:.8rem;color:var(--text-muted)">Select start and end roads, then click <strong>Find</strong>.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Bottom Grid: Map  |  Schedule + Emergency ──────── -->
+    <p class="section-title">Map &amp; Operations</p>
+    <div class="bottom-grid">
+
+      <!-- Map + Chart (left column) -->
+      <div style="display:flex;flex-direction:column;gap:1.25rem;">
+
+        <!-- Map -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
+                <line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+              </svg>
+              Map Visualisation — Roads &amp; Traffic Density
+            </div>
+          </div>
+          <div class="card-body" style="padding:.75rem;">
+            <div id="traffic-map">
+              <div class="loader"><div class="spinner"></div>Waiting for data…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+                <line x1="6"  y1="20" x2="6"  y2="14"/><line x1="2"  y1="20" x2="22" y2="20"/>
+              </svg>
+              Traffic Simulation Graph — Vehicle Counts
+            </div>
+          </div>
+          <div class="card-body">
+            <canvas id="traffic-chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column: Schedule + Emergency -->
+      <div style="display:flex;flex-direction:column;gap:1.25rem;">
+
+        <!-- Scheduling -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              Vehicle Batch Scheduling
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="schedule-body" class="schedule-list">
+              <div class="loader"><div class="spinner"></div>Loading…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Emergency -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              Emergency Vehicle Priority
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="emergency-body">
+              <div class="loader"><div class="spinner"></div>Loading…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Prediction -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+              </svg>
+              AI Traffic Prediction — Next 10 min
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="prediction-body" class="schedule-list">
+              <div class="loader"><div class="spinner"></div>Loading…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
