@@ -20,6 +20,13 @@ POST /api/emergency/<id>/activate Activate corridor + signals
 GET  /api/emergency/<id>          Corridor status
 POST /api/emergency/<id>/advance  Simulate vehicle progress
 POST /api/emergency/<id>/reroute  Reroute around blocked segment
+
+GET  /api/analytics/comparison    Before/after optimization metrics
+
+POST /api/diversion/recommend     Recommend diversion for blocked road
+POST /api/diversion/activate      Apply diversion to simulated state
+
+POST /api/simulation/run          Run what-if scenario simulation
 """
 
 from flask import Flask, jsonify, request
@@ -53,6 +60,12 @@ from corridor import (
     advance_corridor,
     reroute_corridor,
 )
+from comparison import compute_comparison
+from diversion import (
+    recommend_diversion,
+    activate_diversion as activate_diversion_fn,
+)
+from simulation import run_simulation
 
 app = Flask(__name__)
 CORS(app)  # Allow browser requests from any origin (needed for frontend)
@@ -470,6 +483,83 @@ def api_emergency_reroute(corridor_id):
     result = reroute_corridor(corridor_id, G, seg, jdf, _signal_states)
     if "error" in result:
         return jsonify(result), 400
+    return jsonify(result)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  STEP 4 — Before/After Comparison
+# ═══════════════════════════════════════════════════════════════
+
+@app.route("/api/analytics/comparison")
+def api_comparison():
+    """Before/after optimization metrics for the whole network."""
+    G   = create_graph(load_segments())
+    jdf = load_junctions()
+    return jsonify(compute_comparison(G, jdf))
+
+
+# ═══════════════════════════════════════════════════════════════
+#  STEP 5 — Diversion / Road Closure
+# ═══════════════════════════════════════════════════════════════
+
+@app.route("/api/diversion/recommend", methods=["POST"])
+def api_diversion_recommend():
+    """
+    Recommend a diversion around a blocked road.
+    Body: { "blocked_segment": "S04" }
+    """
+    body = request.get_json(silent=True) or {}
+    seg  = body.get("blocked_segment")
+    if not seg:
+        return jsonify({"error": "Missing 'blocked_segment'."}), 400
+
+    G   = create_graph(load_segments())
+    jdf = load_junctions()
+    result = recommend_diversion(G, seg, jdf)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result), 201
+
+
+@app.route("/api/diversion/activate", methods=["POST"])
+def api_diversion_activate():
+    """
+    Activate a previously recommended diversion.
+    Body: { "diversion_id": "DIV-XXXXXX" }
+    """
+    _ensure_signal_states()
+    body = request.get_json(silent=True) or {}
+    did  = body.get("diversion_id")
+    if not did:
+        return jsonify({"error": "Missing 'diversion_id'."}), 400
+
+    result = activate_diversion_fn(did, _signal_states)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  STEP 6 — Scenario Simulation
+# ═══════════════════════════════════════════════════════════════
+
+@app.route("/api/simulation/run", methods=["POST"])
+def api_simulation_run():
+    """
+    Run a what-if scenario.
+    Body (all optional):
+    {
+        "traffic_multiplier": 1.5,
+        "road_closure": "S04",
+        "incident_segment": "S24",
+        "incident_severity": 2.0,
+        "congestion_override": null
+    }
+    """
+    body = request.get_json(silent=True) or {}
+    seg  = load_segments()
+    jdf  = load_junctions()
+    result = run_simulation(seg, jdf, body)
     return jsonify(result)
 
 
