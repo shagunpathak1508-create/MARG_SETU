@@ -1,50 +1,11 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "traffic_optimizer/app.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/traffic_optimizer/app.py"
-    },
-    {
-      "source": "/traffic",
-      "destination": "/traffic_optimizer/app.py"
-    },
-    {
-      "source": "/junctions",
-      "destination": "/traffic_optimizer/app.py"
-    },
-    {
-      "source": "/route/(.*)",
-      "destination": "/traffic_optimizer/app.py"
-    },
-    {
-      "source": "/predict/(.*)",
-      "destination": "/traffic_optimizer/app.py"
-    },
-    {
-      "source": "/schedule",
-      "destination": "/traffic_optimizer/app.py"
-    },
-    {
-      "source": "/emergency",
-      "destination": "/traffic_optimizer/app.py"
-    },
-    {
       "source": "/(.*)",
-      "destination": "/frontend/dist/index.html"
+      "destination": "/index.html"
     }
   ]
 }
