@@ -32,14 +32,19 @@ export default function NetworkMap() {
   // Find min/max to normalize coordinates to SVG space (with some padding)
   const lats = junctions.map(j => j.lat);
   const lngs = junctions.map(j => j.lng);
-  const minLat = Math.min(...lats) - 10;
-  const maxLat = Math.max(...lats) + 10;
-  const minLng = Math.min(...lngs) - 10;
-  const maxLng = Math.max(...lngs) + 10;
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
 
-  const toX = (lng) => ((lng - minLng) / (maxLng - minLng)) * 100;
+  // Prevent division by zero if there's only 1 node or they share same lat/lng
+  const latRange = maxLat - minLat || 1;
+  const lngRange = maxLng - minLng || 1;
+
+  // Map to 10% - 90% (leaving 10% margin on all sides)
+  const toX = (lng) => 10 + ((lng - minLng) / lngRange) * 80;
   // SVG y is top-down, so invert lat
-  const toY = (lat) => (1 - ((lat - minLat) / (maxLat - minLat))) * 100;
+  const toY = (lat) => 10 + (1 - ((lat - minLat) / latRange)) * 80;
 
   // Build a lookup for junctions by ID to draw edges
   const jMap = {};
