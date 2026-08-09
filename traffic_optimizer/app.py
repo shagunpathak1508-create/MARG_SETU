@@ -3,13 +3,23 @@ Smart Traffic Flow Optimizer — Flask API server.
 
 Endpoints
 ---------
-GET /traffic           Road-segment traffic status
-GET /junctions         Junction (intersection) list with coordinates
-GET /route/<s>/<e>     Congestion-optimized route between junctions
-GET /route/compare/<s>/<e>  Compare shortest-distance vs optimized route
-GET /schedule          Vehicle batch scheduling
-GET /emergency         Emergency vehicle priority routing
-GET /predict/<seg>     AI traffic prediction for a road segment
+GET  /traffic                     Road-segment traffic status
+GET  /junctions                   Junction list with coordinates
+GET  /route/<s>/<e>               Congestion-optimized route
+GET  /route/compare/<s>/<e>       Compare shortest vs optimized route
+GET  /schedule                    Vehicle batch scheduling
+GET  /emergency                   Legacy emergency routing
+GET  /predict/<seg>               AI traffic prediction
+
+GET  /api/signals                 Signal state (all or ?junction_id=)
+POST /api/signals/optimize        Recommend optimized timing
+POST /api/signals/activate        Apply optimized timing
+
+POST /api/emergency/create        Create emergency corridor
+POST /api/emergency/<id>/activate Activate corridor + signals
+GET  /api/emergency/<id>          Corridor status
+POST /api/emergency/<id>/advance  Simulate vehicle progress
+POST /api/emergency/<id>/reroute  Reroute around blocked segment
 """
 
 from flask import Flask, jsonify, request
@@ -32,6 +42,17 @@ from src_scheduling import generate_schedule
 from emergency import is_emergency
 from prediction import train_model, predict_traffic
 from traffic_analysis import calculate_congestion_level
+from signals import (
+    compute_default_signal_state,
+    optimize_signal_timing,
+)
+from corridor import (
+    create_corridor,
+    activate_corridor,
+    get_corridor,
+    advance_corridor,
+    reroute_corridor,
+)
 
 app = Flask(__name__)
 CORS(app)  # Allow browser requests from any origin (needed for frontend)
@@ -42,6 +63,9 @@ SEGMENTS_PATH  = os.path.join(BASE_DIR, "data", "road_segments.csv")
 
 # Train prediction model once at startup
 _prediction_model = train_model()
+
+# In-memory signal state  (junction_id → signal dict)
+_signal_states = {}
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -255,6 +279,198 @@ def predict(segment_id):
         "current":    current,
         "predicted":  pred,
     })
+
+
+
+# ═══════════════════════════════════════════════════════════════
+#  STEP 2 — Signal Timing Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+def _ensure_signal_states():
+    """Lazily populate _signal_states with defaults for every junction."""
+    if _signal_states:
+        return
+    G   = create_graph(load_segments())
+    jdf = load_junctions()
+    for jid in sorted(G.nodes):
+        st = compute_default_signal_state(G, jid, jdf)
+        if st:
+            _signal_states[jid] = st
+
+
+# ── GET /api/signals ─────────────────────────────────────────
+@app.route("/api/signals")
+def api_signals():
+    """
+    Return signal state.  Optionally filter by ?junction_id=J01.
+    """
+    _ensure_signal_states()
+
+    jid = request.args.get("junction_id")
+    if jid:
+        st = _signal_states.get(jid)
+        if not st:
+            return jsonify({"error": f"Junction '{jid}' not found."}), 404
+        return jsonify(st)
+
+    return jsonify(list(_signal_states.values()))
+
+
+# ── POST /api/signals/optimize ───────────────────────────────
+@app.route("/api/signals/optimize", methods=["POST"])
+def api_signals_optimize():
+    """
+    Return recommended signal timings for a junction.
+    Body: { "junction_id": "J01" }
+    Does NOT apply the recommendation yet.
+    """
+    body = request.get_json(silent=True) or {}
+    jid  = body.get("junction_id")
+    if not jid:
+        return jsonify({"error": "Missing 'junction_id' in request body."}), 400
+
+    G   = create_graph(load_segments())
+    jdf = load_junctions()
+
+    if jid not in G.nodes:
+        return jsonify({"error": f"Junction '{jid}' not found."}), 404
+
+    state, explanation = optimize_signal_timing(G, jid, jdf)
+    if state is None:
+        return jsonify({"error": explanation}), 400
+
+    return jsonify({
+        "recommendation": state,
+        "explanation":     explanation,
+    })
+
+
+# ── POST /api/signals/activate ───────────────────────────────
+@app.route("/api/signals/activate", methods=["POST"])
+def api_signals_activate():
+    """
+    Apply the optimized timing to simulated state.
+    Body: { "junction_id": "J01" }
+    """
+    _ensure_signal_states()
+
+    body = request.get_json(silent=True) or {}
+    jid  = body.get("junction_id")
+    if not jid:
+        return jsonify({"error": "Missing 'junction_id' in request body."}), 400
+
+    G   = create_graph(load_segments())
+    jdf = load_junctions()
+
+    if jid not in G.nodes:
+        return jsonify({"error": f"Junction '{jid}' not found."}), 404
+
+    state, explanation = optimize_signal_timing(G, jid, jdf)
+    if state is None:
+        return jsonify({"error": explanation}), 400
+
+    _signal_states[jid] = state
+    return jsonify({
+        "applied":     state,
+        "explanation": explanation,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════
+#  STEP 3 — Emergency Corridor Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+# ── POST /api/emergency/create ───────────────────────────────
+@app.route("/api/emergency/create", methods=["POST"])
+def api_emergency_create():
+    """
+    Create a proposed emergency corridor.
+    Body: { "vehicle_type": "ambulance",
+            "origin": "J08", "destination": "J04",
+            "priority_level": "high" }
+    """
+    body = request.get_json(silent=True) or {}
+    vtype = body.get("vehicle_type")
+    orig  = body.get("origin")
+    dest  = body.get("destination")
+    prio  = body.get("priority_level", "high")
+
+    if not all([vtype, orig, dest]):
+        return jsonify({
+            "error": "Missing required fields: vehicle_type, origin, destination."
+        }), 400
+
+    if not is_emergency(vtype):
+        return jsonify({"error": f"'{vtype}' is not a recognized emergency vehicle type."}), 400
+
+    G   = create_graph(load_segments())
+    jdf = load_junctions()
+
+    if orig not in G.nodes or dest not in G.nodes:
+        return jsonify({
+            "error": f"Junction '{orig}' or '{dest}' not found.",
+            "available": sorted(list(G.nodes)),
+        }), 404
+
+    result = create_corridor(G, vtype, orig, dest, prio, jdf)
+    if "error" in result:
+        return jsonify(result), 500
+
+    return jsonify(result), 201
+
+
+# ── POST /api/emergency/<id>/activate ────────────────────────
+@app.route("/api/emergency/<corridor_id>/activate", methods=["POST"])
+def api_emergency_activate(corridor_id):
+    """Activate corridor and push signal priorities."""
+    _ensure_signal_states()
+    result = activate_corridor(corridor_id, _signal_states)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+# ── GET /api/emergency/<id> ──────────────────────────────────
+@app.route("/api/emergency/<corridor_id>")
+def api_emergency_get(corridor_id):
+    """Get current corridor state."""
+    result = get_corridor(corridor_id)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+# ── POST /api/emergency/<id>/advance ─────────────────────────
+@app.route("/api/emergency/<corridor_id>/advance", methods=["POST"])
+def api_emergency_advance(corridor_id):
+    """Advance the emergency vehicle one step."""
+    _ensure_signal_states()
+    result = advance_corridor(corridor_id, _signal_states)
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+# ── POST /api/emergency/<id>/reroute ─────────────────────────
+@app.route("/api/emergency/<corridor_id>/reroute", methods=["POST"])
+def api_emergency_reroute(corridor_id):
+    """
+    Reroute around a blocked segment.
+    Body: { "blocked_segment": "S04" }
+    """
+    body = request.get_json(silent=True) or {}
+    seg  = body.get("blocked_segment")
+    if not seg:
+        return jsonify({"error": "Missing 'blocked_segment' in request body."}), 400
+
+    G   = create_graph(load_segments())
+    jdf = load_junctions()
+    _ensure_signal_states()
+
+    result = reroute_corridor(corridor_id, G, seg, jdf, _signal_states)
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify(result)
 
 
 # ── Run ──────────────────────────────────────────────────────
