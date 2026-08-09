@@ -1,0 +1,21 @@
+junction_id,name,lat,lng
+J01,Central Station,18.5200,73.8560
+J02,City Hall Square,18.5255,73.8500
+J03,Market Circle,18.5190,73.8410
+J04,Hospital Road Junction,18.5350,73.8555
+J05,University Gate,18.5340,73.8710
+J06,Industrial Area Gate,18.5050,73.8750
+J07,Ring Road North,18.5450,73.8560
+J08,Ring Road South,18.4950,73.8555
+J09,Ring Road East,18.5195,73.8870
+J10,Ring Road West,18.5200,73.8250
+J11,Railway Colony,18.5100,73.8500
+J12,Lake View Point,18.5380,73.8340
+J13,IT Park Gate,18.5270,73.8740
+J14,Airport Road Junction,18.5450,73.8810
+J15,Old Bridge,18.5080,73.8350
+J16,New Bridge,18.5000,73.8510
+J17,Bus Terminal,18.5175,73.8480
+J18,Stadium Junction,18.5300,73.8380
+J19,Temple Road Junction,18.5110,73.8660
+J20,Cantonment Gate,18.5400,73.8620
